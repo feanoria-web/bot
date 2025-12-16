@@ -1057,8 +1057,7 @@ async function announceNewEvent(guild, eventData, user) {
         { name: '📅 Tarih', value: eventData.date, inline: true },
         { name: '🕐 Saat', value: eventData.time || 'Belirtilmemiş', inline: true },
         { name: '🎭 Tür', value: typeEmoji, inline: true },
-        { name: '📝 Durum', value: statusText, inline: true },
-        { name: '👤 Düzenleyen', value: `<@${user.id}>`, inline: true }
+        { name: '📝 Durum', value: statusText, inline: true }
       )
       .setColor(eventData.type === 'ozel' ? 0x9B59B6 : 0x3498DB)
       .setFooter({ text: 'Event Takvimi' })
