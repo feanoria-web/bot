@@ -357,6 +357,13 @@ client.on(Events.InteractionCreate, async (interaction) => {
         .setRequired(true)
         .setPlaceholder('Örn: 25.12.2024');
 
+      const timeInput = new TextInputBuilder()
+        .setCustomId('event_time')
+        .setLabel('Event Saati (SS:DD)')
+        .setStyle(TextInputStyle.Short)
+        .setRequired(true)
+        .setPlaceholder('Örn: 21:00');
+
       const typeInput = new TextInputBuilder()
         .setCustomId('event_type')
         .setLabel('Event Türü (ozel/halka_acik)')
@@ -364,18 +371,19 @@ client.on(Events.InteractionCreate, async (interaction) => {
         .setRequired(true)
         .setPlaceholder('ozel veya halka_acik');
 
-      const descInput = new TextInputBuilder()
-        .setCustomId('event_desc')
-        .setLabel('Event Açıklaması')
-        .setStyle(TextInputStyle.Paragraph)
+      const posterInput = new TextInputBuilder()
+        .setCustomId('event_poster')
+        .setLabel('Afiş Linki (halka_acik için zorunlu)')
+        .setStyle(TextInputStyle.Short)
         .setRequired(false)
-        .setPlaceholder('Event hakkında detaylar...');
+        .setPlaceholder('Örn: https://i.imgur.com/xxxxx.png');
 
       modal.addComponents(
         new ActionRowBuilder().addComponents(nameInput),
         new ActionRowBuilder().addComponents(dateInput),
+        new ActionRowBuilder().addComponents(timeInput),
         new ActionRowBuilder().addComponents(typeInput),
-        new ActionRowBuilder().addComponents(descInput)
+        new ActionRowBuilder().addComponents(posterInput)
       );
 
       await interaction.showModal(modal);
@@ -412,7 +420,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
         const typeEmoji = event.type === 'ozel' ? '🔒' : '🌐';
         const status = event.status === 'onaylandi' ? '✅' : '⏳';
         description += `**${index + 1}.** ${typeEmoji} **${event.name}**\n`;
-        description += `   📆 ${event.date} | ${status} ${event.status || 'beklemede'}\n`;
+        description += `   📆 ${event.date} 🕐 ${event.time || 'Belirtilmemiş'} | ${status} ${event.status || 'beklemede'}\n`;
         description += `   👤 ${event.requestedBy || 'Bilinmiyor'}\n\n`;
       });
 
@@ -486,6 +494,13 @@ client.on(Events.InteractionCreate, async (interaction) => {
         .setRequired(true)
         .setPlaceholder('Örn: 25.12.2024');
 
+      const timeInput = new TextInputBuilder()
+        .setCustomId('event_time')
+        .setLabel('Event Saati (SS:DD)')
+        .setStyle(TextInputStyle.Short)
+        .setRequired(true)
+        .setPlaceholder('Örn: 21:00');
+
       const typeInput = new TextInputBuilder()
         .setCustomId('event_type')
         .setLabel('Event Türü (ozel/halka_acik)')
@@ -493,18 +508,19 @@ client.on(Events.InteractionCreate, async (interaction) => {
         .setRequired(true)
         .setPlaceholder('ozel veya halka_acik yazın');
 
-      const descInput = new TextInputBuilder()
-        .setCustomId('event_desc')
-        .setLabel('Event Açıklaması (isteğe bağlı)')
-        .setStyle(TextInputStyle.Paragraph)
+      const posterInput = new TextInputBuilder()
+        .setCustomId('event_poster')
+        .setLabel('Afiş Linki (halka_acik için ZORUNLU)')
+        .setStyle(TextInputStyle.Short)
         .setRequired(false)
-        .setPlaceholder('Etkinliğiniz hakkında detay verin...');
+        .setPlaceholder('Örn: https://i.imgur.com/xxxxx.png');
 
       modal.addComponents(
         new ActionRowBuilder().addComponents(nameInput),
         new ActionRowBuilder().addComponents(dateInput),
+        new ActionRowBuilder().addComponents(timeInput),
         new ActionRowBuilder().addComponents(typeInput),
-        new ActionRowBuilder().addComponents(descInput)
+        new ActionRowBuilder().addComponents(posterInput)
       );
 
       await interaction.showModal(modal);
@@ -537,13 +553,21 @@ client.on(Events.InteractionCreate, async (interaction) => {
           .addFields(
             { name: '📌 Event Adı', value: eventData.name, inline: true },
             { name: '📅 Tarih', value: eventData.date, inline: true },
+            { name: '🕐 Saat', value: eventData.time || 'Belirtilmemiş', inline: true },
             { name: '🔒 Tür', value: eventData.type === 'ozel' ? 'Özel' : 'Halka Açık', inline: true }
           )
           .setColor(0x00FF00)
           .setTimestamp();
 
+        if (eventData.poster) {
+          embed.setImage(eventData.poster);
+        }
+
         // Log kanalına bildir
         await logEventRequest(interaction.guild, eventData, interaction.user);
+
+        // Event takvimi kanalına duyuru gönder
+        await announceNewEvent(interaction.guild, eventData, interaction.user);
 
         await interaction.update({
           embeds: [embed],
@@ -671,8 +695,9 @@ client.on(Events.InteractionCreate, async (interaction) => {
     if (interaction.isModalSubmit() && interaction.customId === 'event_request_modal') {
       const eventName = interaction.fields.getTextInputValue('event_name');
       const eventDate = interaction.fields.getTextInputValue('event_date');
+      const eventTime = interaction.fields.getTextInputValue('event_time');
       const eventType = interaction.fields.getTextInputValue('event_type').toLowerCase();
-      const eventDesc = interaction.fields.getTextInputValue('event_desc') || '';
+      const eventPoster = interaction.fields.getTextInputValue('event_poster') || '';
 
       // Tarih formatını kontrol et
       const parsedDate = parseDate(eventDate);
@@ -683,11 +708,35 @@ client.on(Events.InteractionCreate, async (interaction) => {
         });
       }
 
+      // Saat formatını kontrol et
+      const timePattern = /^([01]?[0-9]|2[0-3]):([0-5][0-9])$/;
+      if (!timePattern.test(eventTime)) {
+        return await interaction.reply({
+          content: '⚠️ Geçersiz saat formatı! Lütfen SS:DD formatında girin (Örn: 21:00)',
+          ephemeral: true
+        });
+      }
+
       // Tür kontrolü
-      const validTypes = ['ozel', 'özel', 'halka_acik', 'halka açık', 'public', 'private'];
       const normalizedType = eventType.includes('ozel') || eventType.includes('özel') || eventType === 'private'
         ? 'ozel'
         : 'halka_acik';
+
+      // Halka açık eventler için afiş zorunlu
+      if (normalizedType === 'halka_acik' && !eventPoster) {
+        return await interaction.reply({
+          content: '⚠️ Halka açık eventler için afiş linki zorunludur! Lütfen bir imgur linki ekleyin.',
+          ephemeral: true
+        });
+      }
+
+      // Afiş linki varsa geçerli mi kontrol et
+      if (eventPoster && !eventPoster.match(/^https?:\/\/.+\.(png|jpg|jpeg|gif|webp)$/i) && !eventPoster.includes('imgur.com')) {
+        return await interaction.reply({
+          content: '⚠️ Geçersiz afiş linki! Lütfen geçerli bir resim URL\'si girin (imgur önerilir).',
+          ephemeral: true
+        });
+      }
 
       // Çakışma kontrolü
       const conflicts = findConflictingEvents(eventDate);
@@ -695,8 +744,9 @@ client.on(Events.InteractionCreate, async (interaction) => {
       const eventData = {
         name: eventName,
         date: parsedDate.formatted,
+        time: eventTime,
         type: normalizedType,
-        description: eventDesc,
+        poster: eventPoster,
         requestedBy: interaction.user.tag,
         requestedById: interaction.user.id,
         channelId: interaction.channelId,
@@ -705,7 +755,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
       if (conflicts.length > 0) {
         // Çakışma var - kullanıcıya bildir
-        const conflictList = conflicts.map(c => `• **${c.name}** (${c.type === 'ozel' ? 'Özel' : 'Halka Açık'})`).join('\n');
+        const conflictList = conflicts.map(c => `• **${c.name}** - Saat: ${c.time || 'Belirtilmemiş'} (${c.type === 'ozel' ? 'Özel' : 'Halka Açık'})`).join('\n');
 
         const conflictEmbed = new EmbedBuilder()
           .setTitle('⚠️ Tarih Çakışması Tespit Edildi!')
@@ -717,6 +767,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
           .addFields(
             { name: '📌 Sizin Eventiniz', value: eventName, inline: true },
             { name: '📅 Tarih', value: parsedDate.formatted, inline: true },
+            { name: '🕐 Saat', value: eventTime, inline: true },
             { name: '🔒 Tür', value: normalizedType === 'ozel' ? 'Özel' : 'Halka Açık', inline: true }
           )
           .setTimestamp();
@@ -754,6 +805,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
           .addFields(
             { name: '📌 Event Adı', value: eventName, inline: true },
             { name: '📅 Tarih', value: parsedDate.formatted, inline: true },
+            { name: '🕐 Saat', value: eventTime, inline: true },
             { name: '🔒 Tür', value: normalizedType === 'ozel' ? 'Özel' : 'Halka Açık', inline: true },
             { name: '📝 Durum', value: 'Beklemede', inline: true }
           )
@@ -761,12 +813,15 @@ client.on(Events.InteractionCreate, async (interaction) => {
           .setFooter({ text: 'Yetkililer en kısa sürede talebinizi değerlendirecektir.' })
           .setTimestamp();
 
-        if (eventDesc) {
-          successEmbed.addFields({ name: '📄 Açıklama', value: eventDesc.substring(0, 1024), inline: false });
+        if (eventPoster) {
+          successEmbed.setImage(eventPoster);
         }
 
         // Log kanalına bildir
         await logEventRequest(interaction.guild, eventData, interaction.user);
+
+        // Event takvimi kanalına duyuru gönder
+        await announceNewEvent(interaction.guild, eventData, interaction.user);
 
         await interaction.reply({ embeds: [successEmbed] });
       } else {
@@ -782,8 +837,9 @@ client.on(Events.InteractionCreate, async (interaction) => {
     if (interaction.isModalSubmit() && interaction.customId === 'admin_event_modal') {
       const eventName = interaction.fields.getTextInputValue('event_name');
       const eventDate = interaction.fields.getTextInputValue('event_date');
+      const eventTime = interaction.fields.getTextInputValue('event_time');
       const eventType = interaction.fields.getTextInputValue('event_type').toLowerCase();
-      const eventDesc = interaction.fields.getTextInputValue('event_desc') || '';
+      const eventPoster = interaction.fields.getTextInputValue('event_poster') || '';
 
       const parsedDate = parseDate(eventDate);
       if (!parsedDate) {
@@ -793,13 +849,31 @@ client.on(Events.InteractionCreate, async (interaction) => {
         });
       }
 
+      // Saat formatını kontrol et
+      const timePattern = /^([01]?[0-9]|2[0-3]):([0-5][0-9])$/;
+      if (!timePattern.test(eventTime)) {
+        return await interaction.reply({
+          content: '⚠️ Geçersiz saat formatı! Lütfen SS:DD formatında girin (Örn: 21:00)',
+          ephemeral: true
+        });
+      }
+
       const normalizedType = eventType.includes('ozel') || eventType.includes('özel') ? 'ozel' : 'halka_acik';
+
+      // Halka açık eventler için afiş zorunlu
+      if (normalizedType === 'halka_acik' && !eventPoster) {
+        return await interaction.reply({
+          content: '⚠️ Halka açık eventler için afiş linki zorunludur!',
+          ephemeral: true
+        });
+      }
 
       const eventData = {
         name: eventName,
         date: parsedDate.formatted,
+        time: eventTime,
         type: normalizedType,
-        description: eventDesc,
+        poster: eventPoster,
         requestedBy: interaction.user.tag,
         requestedById: interaction.user.id,
         status: 'onaylandi', // Admin eklediği için otomatik onaylı
@@ -815,10 +889,18 @@ client.on(Events.InteractionCreate, async (interaction) => {
           .addFields(
             { name: '📌 Event Adı', value: eventName, inline: true },
             { name: '📅 Tarih', value: parsedDate.formatted, inline: true },
+            { name: '🕐 Saat', value: eventTime, inline: true },
             { name: '🔒 Tür', value: normalizedType === 'ozel' ? 'Özel' : 'Halka Açık', inline: true }
           )
           .setColor(0x00FF00)
           .setTimestamp();
+
+        if (eventPoster) {
+          embed.setImage(eventPoster);
+        }
+
+        // Event takvimi kanalına duyuru gönder
+        await announceNewEvent(interaction.guild, eventData, interaction.user);
 
         await interaction.reply({ embeds: [embed], ephemeral: true });
       } else {
@@ -923,6 +1005,7 @@ async function logEventRequest(guild, eventData, user) {
       .addFields(
         { name: '📌 Event Adı', value: eventData.name, inline: true },
         { name: '📅 Tarih', value: eventData.date, inline: true },
+        { name: '🕐 Saat', value: eventData.time || 'Belirtilmemiş', inline: true },
         { name: '🔒 Tür', value: eventData.type === 'ozel' ? 'Özel' : 'Halka Açık', inline: true },
         { name: '📝 Durum', value: eventData.status || 'Beklemede', inline: true },
         { name: '👤 Talep Eden', value: `<@${user.id}>`, inline: true }
@@ -930,13 +1013,67 @@ async function logEventRequest(guild, eventData, user) {
       .setColor(0x5865F2)
       .setTimestamp();
 
-    if (eventData.description) {
-      embed.addFields({ name: '📄 Açıklama', value: eventData.description.substring(0, 1024), inline: false });
+    if (eventData.poster) {
+      embed.setImage(eventData.poster);
     }
 
     await logChannel.send({ embeds: [embed] });
   } catch (err) {
     console.error('Event log gönderme hatası:', err);
+  }
+}
+
+// Event takvimi kanalına duyuru gönder
+async function announceNewEvent(guild, eventData, user) {
+  try {
+    let announceChannel = null;
+
+    // EVENT_ANNOUNCE_CHANNEL_ID varsa onu kullan
+    if (process.env.EVENT_ANNOUNCE_CHANNEL_ID) {
+      try {
+        announceChannel = await guild.channels.fetch(process.env.EVENT_ANNOUNCE_CHANNEL_ID);
+      } catch (_) {}
+    }
+
+    // Yoksa isimle ara
+    if (!announceChannel) {
+      announceChannel = guild.channels.cache.find(c =>
+        ['event-takvimi', 'event-takvim', 'etkinlik-takvimi', 'events', 'etkinlikler'].includes(c.name.toLowerCase())
+      );
+    }
+
+    if (!announceChannel) {
+      console.warn('Event duyuru kanalı bulunamadı. EVENT_ANNOUNCE_CHANNEL_ID tanımlayın veya "event-takvimi" adlı kanal oluşturun.');
+      return;
+    }
+
+    const typeEmoji = eventData.type === 'ozel' ? '🔒 Özel Event' : '🌐 Halka Açık Event';
+    const statusText = eventData.status === 'onaylandi' ? '✅ Onaylandı' : '⏳ Onay Bekliyor';
+
+    const embed = new EmbedBuilder()
+      .setTitle('🎉 YENİ BİR EVENT EKLENDİ!')
+      .setDescription(`**${eventData.name}** takvime eklendi!`)
+      .addFields(
+        { name: '📅 Tarih', value: eventData.date, inline: true },
+        { name: '🕐 Saat', value: eventData.time || 'Belirtilmemiş', inline: true },
+        { name: '🎭 Tür', value: typeEmoji, inline: true },
+        { name: '📝 Durum', value: statusText, inline: true },
+        { name: '👤 Düzenleyen', value: `<@${user.id}>`, inline: true }
+      )
+      .setColor(eventData.type === 'ozel' ? 0x9B59B6 : 0x3498DB)
+      .setFooter({ text: 'Event Takvimi' })
+      .setTimestamp();
+
+    // Halka açık eventler için afiş göster
+    if (eventData.poster && eventData.type === 'halka_acik') {
+      embed.setImage(eventData.poster);
+    }
+
+    await announceChannel.send({ embeds: [embed] });
+    console.log(`Event duyurusu gönderildi: ${eventData.name}`);
+
+  } catch (err) {
+    console.error('Event duyuru gönderme hatası:', err);
   }
 }
 
