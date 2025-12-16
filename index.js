@@ -15,8 +15,31 @@ const {
   Events,
   EmbedBuilder,
   StringSelectMenuBuilder,
-  ChannelType
+  ChannelType,
+  REST,
+  Routes,
+  SlashCommandBuilder
 } = require('discord.js');
+
+// Slash komutları tanımla
+const slashCommands = [
+  new SlashCommandBuilder()
+    .setName('anketiyolla')
+    .setDescription('Bu kanala işletme form butonu yerleştirir.')
+    .toJSON(),
+  new SlashCommandBuilder()
+    .setName('eventekle')
+    .setDescription('Takvime yeni bir event ekler. (Yetkili)')
+    .toJSON(),
+  new SlashCommandBuilder()
+    .setName('eventlistele')
+    .setDescription('Tüm kayıtlı eventleri listeler.')
+    .toJSON(),
+  new SlashCommandBuilder()
+    .setName('eventsil')
+    .setDescription('Takvimden bir event siler. (Yetkili)')
+    .toJSON()
+];
 
 const token = process.env.TOKEN || process.env.DISCORD_TOKEN || (process.env.DISCORD_TOKEN && process.env.DISCORD_TOKEN.trim());
 if (!token) {
@@ -158,6 +181,50 @@ process.on('uncaughtException', (err) => {
 client.once(Events.ClientReady, () => {
   console.log(`${client.user.tag} olarak giriş yapıldı.`);
   console.log('Event Takvimi sistemi aktif!');
+});
+
+// Komutları yenileme fonksiyonu
+async function refreshCommands(guild) {
+  try {
+    const rest = new REST({ version: '10' }).setToken(token);
+    await rest.put(
+      Routes.applicationGuildCommands(client.user.id, guild.id),
+      { body: slashCommands }
+    );
+    return true;
+  } catch (err) {
+    console.error('Komut yenileme hatası:', err);
+    return false;
+  }
+}
+
+// !refresh komutu - Mesaj dinleyici
+client.on(Events.MessageCreate, async (message) => {
+  // Bot mesajlarını yoksay
+  if (message.author.bot) return;
+
+  // !refresh komutu
+  if (message.content.toLowerCase() === '!refresh') {
+    // Yetki kontrolü - sadece sunucu sahibi veya yetkili rol
+    const isOwner = message.guild.ownerId === message.author.id;
+    const hasRole = process.env.AUTHORIZED_ROLE_ID &&
+                    message.member.roles.cache.has(process.env.AUTHORIZED_ROLE_ID);
+
+    if (!isOwner && !hasRole) {
+      return message.reply('❌ Bu komutu kullanmak için yetkiniz yok!');
+    }
+
+    const loadingMsg = await message.reply('🔄 Komutlar yenileniyor...');
+
+    const success = await refreshCommands(message.guild);
+
+    if (success) {
+      await loadingMsg.edit('✅ Komutlar başarıyla yenilendi!\n\n**Mevcut komutlar:**\n• `/anketiyolla`\n• `/eventekle`\n• `/eventlistele`\n• `/eventsil`');
+    } else {
+      await loadingMsg.edit('❌ Komutlar yenilenirken bir hata oluştu!');
+    }
+    return;
+  }
 });
 
 // Yeni kanal oluşturulduğunda (Ticket algılama)
