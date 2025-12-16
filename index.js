@@ -757,15 +757,19 @@ client.on(Events.InteractionCreate, async (interaction) => {
         // Çakışma var - kullanıcıya bildir
         const conflictList = conflicts.map(c => `• **${c.name}** - Saat: ${c.time || 'Belirtilmemiş'} (${c.type === 'ozel' ? 'Özel' : 'Halka Açık'})`).join('\n');
 
+        // Event yöneticisi etiketlemesi
+        const managerId = process.env.EVENT_MANAGER_ID;
+        const managerMention = managerId ? `<@${managerId}>` : 'yetkiliyi';
+
         const conflictEmbed = new EmbedBuilder()
-          .setTitle('⚠️ Tarih Çakışması Tespit Edildi!')
+          .setTitle('📅 Bu Tarihte Zaten Bir Etkinlik Planlanmış!')
           .setDescription(
-            `**${parsedDate.formatted}** tarihinde zaten planlanmış event(ler) var:\n\n${conflictList}\n\n` +
-            `Yine de devam etmek istiyor musunuz?`
+            `**${parsedDate.formatted}** tarihinde hali hazırda planlanmış etkinlik(ler) bulunuyor:\n\n${conflictList}\n\n` +
+            `Yine de bu tarihte etkinlik düzenlemek istiyorsanız, lütfen ${managerMention} etiketleyerek onay alın veya aşağıdaki butonları kullanın.`
           )
           .setColor(0xFFA500)
           .addFields(
-            { name: '📌 Sizin Eventiniz', value: eventName, inline: true },
+            { name: '📌 Sizin Etkinliğiniz', value: eventName, inline: true },
             { name: '📅 Tarih', value: parsedDate.formatted, inline: true },
             { name: '🕐 Saat', value: eventTime, inline: true },
             { name: '🔒 Tür', value: normalizedType === 'ozel' ? 'Özel' : 'Halka Açık', inline: true }
